@@ -7,3 +7,4 @@ Algorithms:
 
 TODO:
 * Support bias temrs properly
+* Cite properly
