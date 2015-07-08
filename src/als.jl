@@ -73,10 +73,13 @@ function als(Ytrain, Ytest, params, options)
     objectives = zeros(options.maxIt)
     errtrain = zeros(options.maxIt)
     errtest = zeros(options.maxIt)
+    timing = zeros(options.maxIt)
 
     for it in 1:options.maxIt
+        tic()
         updateU!(Ytrain, U,V, bu,bi, mu, params.lambdaU)
         updateU!(YtrainT, V,U, bi,bu, mu, params.lambdaV)
+        timing[it] = toq()
 
         #updateBias!(Ytrain, U,V, bu,bi, mu, params.lambdaU)
         #updateBias!(YtrainT, V,U, bi,bu, mu, params.lambdaV)
@@ -98,7 +101,7 @@ function als(Ytrain, Ytest, params, options)
 
         println(it, "\t RMSE:\t", errtest[it] , " \t Objective:\t", obj)
     end
-    return objectives, errtrain, errtest
+    return V,U, objectives, errtest, errtrain,timing
 end
 
 
@@ -174,21 +177,30 @@ function ccdpp(Ytrain, Ytest, params, options)
     R = copy(Ytrain) # due to init U=0
 
     mu = mean(Ytrain.nzval)
-    R.nzval = R.nzval - mu
+    bu = zeros(N)
+    bi = zeros(M)
+    #R.nzval = R.nzval - mu
     RT =  R'
 
     I,J,Vals = findnz(Ytrain)
 
     Ite,Jte,ValsTe = findnz(Ytest)
-    ValsTe -= mu
-    mu = 0.0 
+    #ValsTe -= mu
+    mm = mu
+    #mu = 0.0 
 
     optionsInner = ALSOptions(1) #number of inner iterations
 
     bu = zeros(N)
     bi = zeros(M)
+    timing = zeros(options.maxIt)
+    errtest = zeros(options.maxIt)
+    errtrain = zeros(options.maxIt)
+    objectives = zeros(options.maxIt)
 
+    nObs = convert(Float64, length(Vals))
     for it in 1:options.maxIt
+        tic()
 
         for d in 1:D
             u = unsafe_view(U, :, d)
@@ -202,12 +214,28 @@ function ccdpp(Ytrain, Ytest, params, options)
             updateR!(R, u,v, false)
             updateR!(RT, v,u, false)
         end
+        timing[it] = toq()
 
         ssq = sumSquaredRes(Ite,Jte,ValsTe, V', U', bu, bi, mu)
         err =sqrt(ssq/length(ValsTe))
-        println("Iter: ", it, " RMSE: ", err )
+        errtest[it] = err
+        #println("Iter: ", it, " RMSE: ", err )
+
+        #Objective function
+        obj = sumSquaredRes(I,J,Vals, V', U', bu, bi, mm)
+
+        errtrain[it] = sqrt(obj/nObs)
+        #add regularization terms
+        obj += params.lambdaV * dot(V[:],V[:]) 
+        obj += params.lambdaU * dot(U[:],U[:]) 
+        obj += params.lambdaV * dot(bi,bi)
+        obj += params.lambdaU * dot(bu,bu) 
+
+        objectives[it] = obj
+
+        println(it, "\t Tr.Err $(errtrain[it])\t RMSE:\t", errtest[it] , " \t Objective:\t", obj)
 
     end
-    return V,U
+    return V,U, objectives, errtest, errtrain,timing
 end
 
